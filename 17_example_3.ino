@@ -13,6 +13,9 @@
 #define _DIST_MIN  100.0   // minimum distance 100mm
 #define _DIST_MAX  250.0   // maximum distance 250mm
 
+#define _DIST_MARGIN 10.0
+#define N_SAMPLES    8
+
 #define EMA_ALPHA  0.3      // for EMA Filter
 
 #define LOOP_INTERVAL 20   // Loop Interval (unit: msec)
@@ -31,6 +34,8 @@ void setup()
   myservo.writeMicroseconds(_DUTY_NEU);
   
   Serial.begin(1000000);    // 1,000,000 bps
+
+  last_loop_time = millis();
 }
 
 void loop()
@@ -38,6 +43,7 @@ void loop()
   unsigned long time_curr = millis();
   int duty;
   float a_value, dist_raw;
+  float a_sum;
 
   // wait until next event time
   if (time_curr < (last_loop_time + LOOP_INTERVAL))
@@ -45,6 +51,12 @@ void loop()
   last_loop_time += LOOP_INTERVAL;
 
   a_value = analogRead(PIN_IR);
+
+  a_sum = a_value;
+  for (int i = 1; i < N_SAMPLES; i++)
+    a_sum += analogRead(PIN_IR);
+  a_value = a_sum / N_SAMPLES;
+
   dist_raw = (6762.0 / (a_value - 9.0) - 4.0) * 10.0 - 60.0;
 
   if (dist_raw >= _DIST_MIN && dist_raw <= _DIST_MAX) {
@@ -59,13 +71,18 @@ void loop()
   dist_ema = EMA_ALPHA * dist_prev + (1.0 - EMA_ALPHA) * dist_ema;
       
   duty = _DUTY_MIN + (dist_ema - _DIST_MIN) * (_DUTY_MAX - _DUTY_MIN) / (_DIST_MAX - _DIST_MIN);
+
+  duty = _DUTY_MIN + (dist_ema - (_DIST_MIN + _DIST_MARGIN)) * (_DUTY_MAX - _DUTY_MIN) / ((_DIST_MAX - _DIST_MARGIN) - (_DIST_MIN + _DIST_MARGIN));
+
+  if (duty < _DUTY_MIN) duty = _DUTY_MIN;
+  if (duty > _DUTY_MAX) duty = _DUTY_MAX;
   
   myservo.writeMicroseconds(duty);
 
   Serial.print("_DUTY_MIN:");  Serial.print(_DUTY_MIN);
-  Serial.print("_DIST_MIN:");  Serial.print(_DIST_MIN);
+  Serial.print(",_DIST_MIN:"); Serial.print(_DIST_MIN);
   Serial.print(",IR:");        Serial.print(a_value);
-  Serial.print(",dist_raw:");  Serial.print(dist_raw);
+  Serial.print(",dist_raw:");  Serial.print(dist_ema > 0 ? dist_raw : dist_raw);
   Serial.print(",ema:");       Serial.print(dist_ema);
   Serial.print(",servo:");     Serial.print(duty);
   Serial.print(",_DIST_MAX:"); Serial.print(_DIST_MAX);
